@@ -4,8 +4,9 @@ import Header from "./Header";
 import MessageList from "./MessageList";
 import MessageInput from "./MessageInput";
 import HistorySidebar from "./HistorySidebar";
-import { Message, ChatHistoryItem, ChatSession, ApiResponse } from "../types";
+import { Message, ChatHistoryItem, ChatSession } from "../types";
 
+// Styled Components
 const ChatbotContainer = styled.div`
   width: 400px;
   height: 600px;
@@ -64,7 +65,7 @@ const Chatbot: React.FC = () => {
   const [isHistoryOpen, setIsHistoryOpen] = useState(false);
   const [chatHistory, setChatHistory] = useState<ChatHistoryItem[]>([]);
   const [sessionState, setSessionState] = useState<ChatSession>({
-    user_id: "Nor3", // Should come from authentication
+    user_id: "Nor3",
     session_id: null,
   });
   const [isStreaming, setIsStreaming] = useState(false);
@@ -76,10 +77,9 @@ const Chatbot: React.FC = () => {
 
   const retryCountRef = useRef(0);
   const maxRetries = 3;
-  const currentMessageRef = useRef<string>("");
+  const eventSourceRef = useRef<EventSource | null>(null);
 
   useEffect(() => {
-    // Load session from localStorage
     const savedSession = localStorage.getItem("chatSession");
     if (savedSession) {
       const session = JSON.parse(savedSession);
@@ -88,7 +88,6 @@ const Chatbot: React.FC = () => {
         loadChatHistory(session.session_id);
       }
     } else {
-      // Initialize with welcome message
       setMessages([
         {
           sender: "bot",
@@ -102,14 +101,49 @@ const Chatbot: React.FC = () => {
   }, []);
 
   useEffect(() => {
-    // Save session to localStorage
     localStorage.setItem("chatSession", JSON.stringify(sessionState));
   }, [sessionState]);
+
+  const handleError = (error: unknown) => {
+    const errorMessage =
+      error instanceof Error ? error.message : "An unexpected error occurred";
+    setError(errorMessage);
+
+    if (retryCountRef.current < maxRetries) {
+      retryConnection();
+    } else {
+      updateLastBotMessage(`Error: ${errorMessage}`, undefined, false);
+    }
+  };
+
+  const retryConnection = async () => {
+    retryCountRef.current += 1;
+    setError(`Retrying... Attempt ${retryCountRef.current}/${maxRetries}`);
+    await sendMessage();
+  };
+
+  const startNewChat = () => {
+    setSessionState((prev) => ({ ...prev, session_id: null }));
+    setMessages([
+      {
+        sender: "bot",
+        text: "Hello! How can I assist you today?",
+        timestamp: new Date().toISOString(),
+      },
+    ]);
+    setIsHistoryOpen(false);
+  };
+
+  const selectChat = (chatId: string) => {
+    setSessionState((prev) => ({ ...prev, session_id: chatId }));
+    loadChatHistory(chatId);
+    setIsHistoryOpen(false);
+  };
 
   const fetchChatHistory = async () => {
     setIsLoading((prev) => ({ ...prev, history: true }));
     try {
-      const response = await fetch("http://localhost:7071/api/getChatHistory", {
+      const response = await fetch("https://testingcosmo.azurewebsites.net/api/getchathistory?code=mrDPB-FxGIBwtjrWFaBYQ4JPppMvWQOu9M55kQziL7QkAzFuj0SKRw%3D%3D", {
         headers: {
           "Content-Type": "application/json",
         },
@@ -118,7 +152,11 @@ const Chatbot: React.FC = () => {
       if (!response.ok) throw new Error("Failed to fetch chat history");
 
       const data = await response.json();
-      setChatHistory(data);
+      if (data.status === "success" && Array.isArray(data.histories)) {
+        setChatHistory(data.histories);
+      } else {
+        throw new Error("Invalid response format");
+      }
     } catch (error) {
       console.error("Error fetching chat history:", error);
       setError("Failed to fetch chat history");
@@ -131,7 +169,7 @@ const Chatbot: React.FC = () => {
     setIsLoading((prev) => ({ ...prev, messages: true }));
     try {
       const response = await fetch(
-        "http://localhost:7071/api/getChatHistoryBySession",
+        "https://testingcosmo.azurewebsites.net/api/getchathistorybysession?code=9KKoOEcXXBxrpnnl-aow541qUQlV3z_BDYKhAtvz9VjCAzFu3lEdwA%3D%3D",
         {
           method: "POST",
           headers: {
@@ -188,10 +226,13 @@ const Chatbot: React.FC = () => {
     setMessages((prev) => [...prev, botMessage]);
     setIsStreaming(true);
     setError(null);
-    currentMessageRef.current = input;
 
     try {
-      const response = await fetch("http://localhost:7071/api/Chatbot", {
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+      }
+
+      const response = await fetch("https://testingcosmo.azurewebsites.net/api/chatbot?code=EdE_vOOJRtEbYF0z480lahH-VWqhDCCv_FyINJ0HEpWgAzFurPIdQg%3D%3D", {
         method: "POST",
         headers: {
           "Content-Type": "application/json",
@@ -207,43 +248,68 @@ const Chatbot: React.FC = () => {
         throw new Error(`HTTP error! status: ${response.status}`);
       }
 
-      const data: ApiResponse = await response.json();
-
-      if (data.error) {
-        throw new Error(data.error);
-      }
-
-      // Fixed session update
-      if (data.session_id && !sessionState.session_id) {
-        setSessionState((prev) => ({
-          ...prev,
-          session_id: data.session_id || null, // Ensure null if undefined
-        }));
-      }
-
-      if (!data.chunks) {
-        throw new Error("No response received");
+      const reader = response.body?.getReader();
+      if (!reader) {
+        throw new Error("Response body is not readable");
       }
 
       let accumulatedText = "";
-      for (const chunk of data.chunks) {
-        await new Promise((resolve) => setTimeout(resolve, 50));
+      let decoder = new TextDecoder();
 
-        if (chunk.type === "content") {
-          accumulatedText += chunk.content;
-          updateLastBotMessage(accumulatedText, chunk.references);
-        } else if (chunk.type === "references") {
-          updateLastBotMessage(
-            accumulatedText + chunk.content,
-            chunk.references,
-            false
-          );
+      while (true) {
+        const { done, value } = await reader.read();
+        if (done) break;
+
+        const chunk = decoder.decode(value, { stream: true });
+        const messages = chunk
+          .split("\n\n")
+          .filter(msg => msg.trim())
+          .map(msg => msg.replace(/^data: /, ""));
+
+        for (const msg of messages) {
+          try {
+            const data = JSON.parse(msg);
+            
+            switch (data.type) {
+              case "info":
+                console.log("Info:", data.content);
+                break;
+
+              case "chunk":
+                accumulatedText += data.content;
+                updateLastBotMessage(accumulatedText, undefined, true);
+                break;
+
+              case "error":
+                throw new Error(data.content);
+                
+              case "done":
+                setIsStreaming(false);
+                updateLastBotMessage(accumulatedText, undefined, false);
+                break;
+            }
+          } catch (e) {
+            console.error("Error parsing SSE message:", e);
+          }
         }
       }
+
+      if (response.headers.get("X-Session-Id")) {
+        const newSessionId = response.headers.get("X-Session-Id");
+        setSessionState(prev => ({
+          ...prev,
+          session_id: newSessionId,
+        }));
+      }
+
     } catch (error) {
       handleError(error);
     } finally {
       setIsStreaming(false);
+      if (eventSourceRef.current) {
+        eventSourceRef.current.close();
+        eventSourceRef.current = null;
+      }
     }
   };
 
@@ -255,7 +321,7 @@ const Chatbot: React.FC = () => {
     setMessages((prev) => {
       const newMessages = [...prev];
       const lastMessage = newMessages[newMessages.length - 1];
-      if (lastMessage.sender === "bot") {
+      if (lastMessage && lastMessage.sender === "bot") {
         lastMessage.text = text;
         lastMessage.references = references;
         lastMessage.isStreaming = isStreaming;
@@ -264,49 +330,13 @@ const Chatbot: React.FC = () => {
     });
   };
 
-  const handleError = (error: unknown) => {
-    const errorMessage =
-      error instanceof Error ? error.message : "An unexpected error occurred";
-    setError(errorMessage);
-
-    if (retryCountRef.current < maxRetries) {
-      retryConnection();
-    } else {
-      updateLastBotMessage(`Error: ${errorMessage}`, undefined, false);
-    }
-  };
-
-  const retryConnection = async () => {
-    retryCountRef.current += 1;
-    setError(`Retrying... Attempt ${retryCountRef.current}/${maxRetries}`);
-    await sendMessage();
-  };
-
-  const startNewChat = () => {
-    setSessionState((prev) => ({ ...prev, session_id: null }));
-    setMessages([
-      {
-        sender: "bot",
-        text: "Hello! How can I assist you today?",
-        timestamp: new Date().toISOString(),
-      },
-    ]);
-    setIsHistoryOpen(false);
-  };
-
-  const selectChat = (chatId: string) => {
-    setSessionState((prev) => ({ ...prev, session_id: chatId }));
-    loadChatHistory(chatId);
-    setIsHistoryOpen(false);
-  };
-
   return (
     <ChatbotContainer>
       {error && (
         <ErrorMessage>
           {error}
           {retryCountRef.current < maxRetries && (
-            <RetryButton onClick={retryConnection}>Retry</RetryButton>
+            <RetryButton onClick={() => sendMessage()}>Retry</RetryButton>
           )}
         </ErrorMessage>
       )}

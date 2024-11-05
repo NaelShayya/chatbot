@@ -64,13 +64,13 @@ const ChatTime = styled.p`
 `;
 
 const HistorySidebar: React.FC<HistorySidebarProps> = ({ 
-  chatHistory, 
+  chatHistory = [], 
   onClose, 
   onSelectChat,
   selectedChatId 
 }) => {
-  const getChatTitle = (chat: ChatHistoryItem) => {
-    if (chat.chat_history && chat.chat_history.length > 0) {
+  const getChatTitle = (chat: ChatHistoryItem): string => {
+    if (chat?.chat_history?.[0]?.user_message) {
       const firstMessage = chat.chat_history[0].user_message;
       return firstMessage.length > 50 
         ? firstMessage.substring(0, 50) + '...'
@@ -79,40 +79,56 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
     return 'New Chat';
   };
 
-  const formatTime = (dateString: string) => {
+  const formatTime = (dateString: string): string => {
     try {
-      return formatDistanceToNow(new Date(dateString), { addSuffix: true });
+      const date = new Date(dateString);
+      // Check if date is valid
+      if (isNaN(date.getTime())) {
+        return 'Recent';
+      }
+      return formatDistanceToNow(date, { addSuffix: true });
     } catch (error) {
+      console.error('Error formatting date:', error);
       return 'Recent';
     }
   };
 
-  // Sort history by most recent to oldest
-  const sortedHistory = [...chatHistory].sort((a, b) => {
-    const aTime = new Date(a.last_interaction_time).getTime();
-    const bTime = new Date(b.last_interaction_time).getTime();
-    return bTime - aTime;
-  });
+  // Sort history by last_interaction_time
+  const sortedHistory = Array.isArray(chatHistory) 
+    ? [...chatHistory].sort((a, b) => {
+        try {
+          const aTime = new Date(a.last_interaction_time || 0).getTime();
+          const bTime = new Date(b.last_interaction_time || 0).getTime();
+          return bTime - aTime;
+        } catch (error) {
+          return 0;
+        }
+      })
+    : [];
 
   return (
     <SidebarContainer>
       <CloseButton onClick={onClose}>×</CloseButton>
       <h2 style={{ color: '#fff', marginBottom: '1.5rem' }}>Chat History</h2>
-      {sortedHistory.map((chat) => (
-        <ChatItem 
-          key={chat.id}
-          isSelected={chat.id === selectedChatId}
-          onClick={() => onSelectChat(chat.id)}
-        >
-          <ChatTitle>{getChatTitle(chat)}</ChatTitle>
-          <ChatTime>
-            Last active: {formatTime(chat.last_interaction_time)}
-          </ChatTime>
-          <ChatTime>
-            Messages: {chat.chat_history.length}
-          </ChatTime>
-        </ChatItem>
-      ))}
+      {!Array.isArray(chatHistory) || sortedHistory.length === 0 ? (
+        <p style={{ color: '#8b9cab' }}>No chat history available</p>
+      ) : (
+        sortedHistory.map((chat) => (
+          <ChatItem 
+            key={chat.session_id}
+            isSelected={chat.session_id === selectedChatId}
+            onClick={() => onSelectChat(chat.session_id)}
+          >
+            <ChatTitle>{getChatTitle(chat)}</ChatTitle>
+            <ChatTime>
+              Last active: {formatTime(chat.last_interaction_time)}
+            </ChatTime>
+            <ChatTime>
+              Messages: {chat.chat_history?.length || 0}
+            </ChatTime>
+          </ChatItem>
+        ))
+      )}
     </SidebarContainer>
   );
 };
