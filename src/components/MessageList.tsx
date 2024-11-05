@@ -89,52 +89,50 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
     // Check if references are embedded directly in the text
     const referenceSectionMatch = text.match(/References:\s(.*)$/);
     if (referenceSectionMatch) {
-        const referenceSection = referenceSectionMatch[1];
-        text = text.replace(/References:\s.*$/, "");
+      const referenceSection = referenceSectionMatch[1];
+      text = text.replace(/References:\s.*$/, "");
 
-        // If references are embedded as numbered citations
-        references = referenceSection.split(',').map(ref => ref.trim());
+      // If references are embedded as numbered citations
+      references = referenceSection.split(',').map(ref => ref.trim());
     }
 
-    // Extract the full URL starting with https:// for each reference
-    const cleanedReferences = references?.map(ref => {
-        const urlMatch = ref.match(/https:\/\/[^\s]+/g);
-        return urlMatch ? urlMatch[0] : ref; // Use only the matched URL or fall back to original if no match
-    });
+    // Extract only valid URLs and remove duplicates
+    const uniqueReferences = Array.from(new Set(references)).filter(ref =>
+      /^https:\/\/[^\s]+$/.test(ref)
+    );
 
     // Convert numbered references in the text to clickable links
     const processedText = text.replace(
-        /\[(\d+)\]/g,
-        (match, num) => {
-            const index = parseInt(num) - 1;
-            if (cleanedReferences && cleanedReferences.length > index) {
-                const url = cleanedReferences[index];
-                return `<a href="${url}" target="_blank" rel="noopener noreferrer">[${num}]</a>`;
-            }
-            return match;
+      /\[(\d+)\]/g,
+      (match, num) => {
+        const index = parseInt(num) - 1;
+        if (uniqueReferences && uniqueReferences.length > index) {
+          const url = uniqueReferences[index];
+          return `<a href="${url}" target="_blank" rel="noopener noreferrer">[${num}]</a>`;
         }
+        return match;
+      }
     );
 
     return (
-        <>
-            <MessageText dangerouslySetInnerHTML={{ __html: processedText }} />
-            {cleanedReferences && cleanedReferences.length > 0 && (
-                <ReferencesList>
-                    <strong>References:</strong>
-                    {cleanedReferences.map((ref, refIndex) => (
-                        <ReferenceItem key={refIndex}>
-                            <a href={ref} target="_blank" rel="noopener noreferrer">
-                                [{refIndex + 1}] {ref}
-                            </a>
-                        </ReferenceItem>
-                    ))}
-                </ReferencesList>
-            )}
-            <Timestamp>{new Date(message.timestamp).toLocaleTimeString()}</Timestamp>
-        </>
+      <>
+        <MessageText dangerouslySetInnerHTML={{ __html: processedText }} />
+        {uniqueReferences.length > 0 && (
+          <ReferencesList>
+            <strong>References:</strong>
+            {uniqueReferences.map((ref, refIndex) => (
+              <ReferenceItem key={refIndex}>
+                <a href={ref} target="_blank" rel="noopener noreferrer">
+                  [{refIndex + 1}] {ref}
+                </a>
+              </ReferenceItem>
+            ))}
+          </ReferencesList>
+        )}
+        <Timestamp>{new Date(message.timestamp).toLocaleTimeString()}</Timestamp>
+      </>
     );
-};
-
+  };
 
   return (
     <MessagesContainer>

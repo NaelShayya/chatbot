@@ -1,6 +1,6 @@
 import React from 'react';
 import styled from 'styled-components';
-import { formatDistanceToNow } from 'date-fns';
+import { format, parseISO, compareDesc } from 'date-fns';
 import { ChatHistoryItem } from '../types';
 
 interface HistorySidebarProps {
@@ -70,69 +70,64 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
   selectedChatId 
 }) => {
   const getChatTitle = (chat: ChatHistoryItem): string => {
-    if (chat?.chat_history?.[0]?.user_message) {
-      const firstMessage = chat.chat_history[0].user_message;
-      return firstMessage.length > 50 
-        ? firstMessage.substring(0, 50) + '...'
-        : firstMessage;
+    const firstMessage = chat.chat_history.find(
+        (msg) => msg.role === "user" || msg.role === "assistant"
+    );
+
+    if (firstMessage && typeof firstMessage.content === 'string') {
+        const content = firstMessage.content as string;  // Explicitly cast as string
+        return content.length > 50
+            ? content.substring(0, 50) + "..."
+            : content;
     }
-    return 'New Chat';
-  };
+
+    return "New Chat";  // Fallback title if no valid message is found
+};
+
 
   const formatTime = (dateString: string): string => {
     try {
-      const date = new Date(dateString);
-      // Check if date is valid
-      if (isNaN(date.getTime())) {
-        return 'Recent';
-      }
-      return formatDistanceToNow(date, { addSuffix: true });
+      const date = parseISO(dateString);
+      return format(date, "PPPpp"); // Full date and time format
     } catch (error) {
       console.error('Error formatting date:', error);
-      return 'Recent';
+      return 'Invalid date';
     }
   };
 
-  // Sort history by last_interaction_time
-// Sort history by created_at time in ascending order (chronologically)
-// Sort history by created_at time in ascending order (chronologically)
-const sortedHistory = Array.isArray(chatHistory) 
-  ? [...chatHistory].sort((a, b) => {
-      try {
-        const aTime = new Date(a.created_at || 0).getTime();
-        const bTime = new Date(b.created_at || 0).getTime();
-        return aTime - bTime;  // Ascending order for chronological listing
-      } catch (error) {
-        return 0;
-      }
-    })
-  : [];
-
-
+  const sortedHistory = Array.isArray(chatHistory) 
+    ? [...chatHistory].sort((a, b) => {
+        try {
+          const aDate = parseISO(String(a.created_at));
+          const bDate = parseISO(String(b.created_at));
+          return compareDesc(aDate, bDate); // Newest first
+        } catch (error) {
+          return 0;
+        }
+      })
+    : [];
 
   return (
     <SidebarContainer>
       <CloseButton onClick={onClose}>×</CloseButton>
       <h2 style={{ color: '#fff', marginBottom: '1.5rem' }}>Chat History</h2>
       {!Array.isArray(chatHistory) || sortedHistory.length === 0 ? (
-        <p style={{ color: '#8b9cab' }}>No chat history available</p>
-      ) : (
-        sortedHistory.map((chat) => (
-          <ChatItem 
-            key={chat.session_id}
-            isSelected={chat.session_id === selectedChatId}
-            onClick={() => onSelectChat(chat.session_id)}
-          >
-            <ChatTitle>{getChatTitle(chat)}</ChatTitle>
-            <ChatTime>
-              Last active: {formatTime(chat.last_interaction_time)}
-            </ChatTime>
-            <ChatTime>
-              Messages: {chat.chat_history?.length || 0}
-            </ChatTime>
-          </ChatItem>
-        ))
-      )}
+  <p style={{ color: '#8b9cab' }}>No chat history available</p>
+) : (
+  [...sortedHistory].reverse().map((chat) => (
+    <ChatItem 
+      key={chat.session_id}
+      isSelected={chat.session_id === selectedChatId}
+      onClick={() => onSelectChat(chat.session_id)}
+    >
+      <ChatTitle>{getChatTitle(chat)}</ChatTitle>
+      <ChatTime>
+        Last active: {formatTime(String(chat.last_interaction_time || chat.created_at))}
+      </ChatTime>
+    </ChatItem>
+  ))
+)}
+
     </SidebarContainer>
   );
 };

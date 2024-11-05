@@ -164,46 +164,61 @@ const Chatbot: React.FC = () => {
       setIsLoading((prev) => ({ ...prev, history: false }));
     }
   };
+
   const loadChatHistory = async (chatId: string) => {
     setIsLoading((prev) => ({ ...prev, messages: true }));
     try {
-      const response = await fetch(
-        "https://testingcosmo.azurewebsites.net/api/getchathistorybysession?code=9KKoOEcXXBxrpnnl-aow541qUQlV3z_BDYKhAtvz9VjCAzFu3lEdwA%3D%3D",
-        {
-          method: "POST",
-          headers: {
-            "Content-Type": "application/json",
-          },
-          body: JSON.stringify({ session_id: chatId }),
-        }
-      );
-  
-      if (!response.ok) throw new Error("Failed to load chat history");
-  
-      const data = await response.json();
-  
-      // Map data to Message format expected by MessageList
-      const chatMessages: Message[] = data.map((msg: any) => ({
-        sender: msg.role === "assistant" ? "bot" : "user",
-        text: msg.content || "No content available",
-        timestamp: msg.timestamp || new Date().toISOString(),
-      }));
-      setMessages(chatMessages);
+        const response = await fetch(
+            "https://testingcosmo.azurewebsites.net/api/getchathistorybysession?code=9KKoOEcXXBxrpnnl-aow541qUQlV3z_BDYKhAtvz9VjCAzFu3lEdwA%3D%3D",
+            {
+                method: "POST",
+                headers: {
+                    "Content-Type": "application/json",
+                },
+                body: JSON.stringify({ session_id: chatId }),
+            }
+        );
+
+        if (!response.ok) throw new Error("Failed to load chat history");
+
+        const data = await response.json();
+
+        // Process chat history to include both user and bot messages
+        const chatMessages: Message[] = data
+            .flatMap((msg: any) => {
+                const messages = [];
+                if (msg.role === "user") {
+                    messages.push({
+                        sender: "user",
+                        text: msg.content || "No content available",
+                        timestamp: msg.timestamp || new Date().toISOString(),
+                    });
+                }
+                if (msg.role === "assistant") {
+                    messages.push({
+                        sender: "bot",
+                        text: msg.content || "No content available",
+                        timestamp: msg.timestamp || new Date().toISOString(),
+                    });
+                }
+                return messages;
+            })
+            .sort((a: { timestamp: string | number | Date; }, b: { timestamp: string | number | Date; }) => new Date(a.timestamp).getTime() - new Date(b.timestamp).getTime()); // Sort messages by timestamp
+
+        setMessages(chatMessages);
     } catch (error) {
-      console.error("Error loading chat history:", error);
-      setError("Failed to load chat messages");
+        console.error("Error loading chat history:", error);
+        setError("Failed to load chat messages");
     } finally {
-      setIsLoading((prev) => ({ ...prev, messages: false }));
+        setIsLoading((prev) => ({ ...prev, messages: false }));
     }
-  };
-  
+};
 
   const sendMessage = async () => {
     if (!input.trim() || isStreaming) return;
 
-    // Define userMessage with specific types
     const userMessage: Message = {
-        sender: "user", // Explicitly set as "user" type
+        sender: "user",
         text: input,
         timestamp: new Date().toISOString(),
     };
@@ -211,9 +226,8 @@ const Chatbot: React.FC = () => {
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
-    // Define botMessage as a placeholder for streaming
     const botMessage: Message = {
-        sender: "bot", // Explicitly set as "bot" type
+        sender: "bot",
         text: "",
         timestamp: new Date().toISOString(),
         isStreaming: true,
@@ -228,7 +242,7 @@ const Chatbot: React.FC = () => {
             eventSourceRef.current.close();
         }
 
-        const response = await fetch("https://testingcosmo.azurewebsites.net/api/chatbot?code=EdE_vOOJRtEbYF0z480lahH-VWqhDCCv_FyINJ0HEpWgAzFurPIdQg%3D%3D", {
+        const response = await fetch("http://localhost:7071/api/chatbot", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
@@ -236,18 +250,14 @@ const Chatbot: React.FC = () => {
             body: JSON.stringify({
                 user_id: sessionState.user_id,
                 message: input,
-                session_id: sessionState.session_id,
+                session_id: sessionState.session_id,  // Use the same session_id for all requests
             }),
         });
 
-        if (!response.ok) {
-            throw new Error(`HTTP error! status: ${response.status}`);
-        }
+        if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
 
         const reader = response.body?.getReader();
-        if (!reader) {
-            throw new Error("Response body is not readable");
-        }
+        if (!reader) throw new Error("Response body is not readable");
 
         let accumulatedText = "";
         const decoder = new TextDecoder();
@@ -268,9 +278,14 @@ const Chatbot: React.FC = () => {
 
                     switch (data.type) {
                         case "info":
-                            if (data.session_id) {
+                            if (data.session_id && !sessionState.session_id) {
+                                // Only update sessionState if session_id is not already set
                                 setSessionState((prev) => ({
                                     ...prev,
+                                    session_id: data.session_id,
+                                }));
+                                localStorage.setItem("chatSession", JSON.stringify({
+                                    ...sessionState,
                                     session_id: data.session_id,
                                 }));
                             }
@@ -304,7 +319,6 @@ const Chatbot: React.FC = () => {
         }
     }
 };
-
 
   const updateLastBotMessage = (
     text: string,

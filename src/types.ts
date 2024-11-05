@@ -25,6 +25,11 @@ export interface ChatHistoryItem {
   id: string;
   session_id: string;
   chat_history: Array<{
+    role: string;
+    content: {
+      length: number;
+      substring(arg0: number, arg1: number): unknown; timestamp: string; user_message: string; bot_response: string; references?: string[]; 
+} | undefined;
     timestamp: string;
     user_message: string;
     bot_response: string;
