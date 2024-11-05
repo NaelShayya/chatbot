@@ -242,7 +242,7 @@ const Chatbot: React.FC = () => {
             eventSourceRef.current.close();
         }
 
-        const response = await fetch("http://localhost:7071/api/chatbot", {
+        const response = await fetch("https://testingcosmo.azurewebsites.net/api/chatbot?code=EdE_vOOJRtEbYF0z480lahH-VWqhDCCv_FyINJ0HEpWgAzFurPIdQg%3D%3D", {
             method: "POST",
             headers: {
                 "Content-Type": "application/json",
