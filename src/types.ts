@@ -15,12 +15,13 @@ export interface ChatHistoryMessage {
 export interface Message {
   sender: 'user' | 'bot';
   text: string;
-  references?: string[];
-  isStreaming?: boolean;
   timestamp: string;
+  isStreaming?: boolean;
+  references?: string[];
 }
 
 export interface ChatHistoryItem {
+  created_at: number;
   id: string;
   session_id: string;
   chat_history: Array<{

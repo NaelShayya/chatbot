@@ -20,16 +20,16 @@ const MessagesContainer = styled.div`
 
 const MessageBubble = styled.div<{ sender: 'user' | 'bot'; isStreaming?: boolean }>`
   align-self: ${(props) => (props.sender === 'user' ? 'flex-end' : 'flex-start')};
-  background-color: ${(props) => {
-    if (props.sender === 'user') return '#e76f51';
-    return props.isStreaming ? '#2a3f5f' : '#3a506b';
-  }};
+  background-color: ${(props) => (props.sender === 'user' ? '#e76f51' : props.isStreaming ? '#2a3f5f' : '#3a506b')};
   color: #ffffff;
   padding: 10px 15px;
   border-radius: 15px;
   max-width: 70%;
   word-wrap: break-word;
-  animation: ${props => props.isStreaming ? 'pulse 1.5s infinite' : 'none'};
+  white-space: pre-wrap;
+  animation: ${(props) => (props.isStreaming ? 'pulse 1.5s infinite' : 'none')};
+  font-size: 0.9rem;
+  line-height: 1.4;
 
   @keyframes pulse {
     0% { opacity: 1; }
@@ -39,7 +39,6 @@ const MessageBubble = styled.div<{ sender: 'user' | 'bot'; isStreaming?: boolean
 `;
 
 const MessageText = styled.div`
-  white-space: pre-wrap;
   line-height: 1.5;
 
   a {
@@ -58,6 +57,18 @@ const Timestamp = styled.div`
   margin-top: 4px;
 `;
 
+const ReferencesList = styled.ul`
+  margin-top: 8px;
+  padding-left: 20px;
+  font-size: 0.8rem;
+  color: #9fc5e8;
+  list-style-type: disc;
+`;
+
+const ReferenceItem = styled.li`
+  margin-bottom: 4px;
+`;
+
 interface MessageListProps {
   messages: Message[];
 }
@@ -70,47 +81,65 @@ const MessageList: React.FC<MessageListProps> = ({ messages }) => {
   }, [messages]);
 
   const renderMessageContent = (message: Message) => {
-    const { text, references } = message;
-    
-    // Remove the "References:" section if it exists
-    const mainText = text.split('\nReferences:\n')[0];
+    let { text, references } = message;
 
-    // Convert numbered references to clickable links inline
-    const processedText = mainText.replace(
-      /\[(\d+)\]/g,
-      (match, num) => {
-        if (references && references.length >= num) {
-          const url = references[num - 1];
-          if (url) {
-            return `<a href="${url}" target="_blank" rel="noopener noreferrer">[${num}]</a>`;
-          }
+    // Format text to add spaces after punctuation if missing
+    text = text.replace(/([.!?])([A-Za-z])/g, '$1 $2').replace(/([A-Za-z])([A-Z])/g, '$1 $2');
+
+    // Check if references are embedded directly in the text
+    const referenceSectionMatch = text.match(/References:\s(.*)$/);
+    if (referenceSectionMatch) {
+        const referenceSection = referenceSectionMatch[1];
+        text = text.replace(/References:\s.*$/, "");
+
+        // If references are embedded as numbered citations
+        references = referenceSection.split(',').map(ref => ref.trim());
+    }
+
+    // Extract the full URL starting with https:// for each reference
+    const cleanedReferences = references?.map(ref => {
+        const urlMatch = ref.match(/https:\/\/[^\s]+/g);
+        return urlMatch ? urlMatch[0] : ref; // Use only the matched URL or fall back to original if no match
+    });
+
+    // Convert numbered references in the text to clickable links
+    const processedText = text.replace(
+        /\[(\d+)\]/g,
+        (match, num) => {
+            const index = parseInt(num) - 1;
+            if (cleanedReferences && cleanedReferences.length > index) {
+                const url = cleanedReferences[index];
+                return `<a href="${url}" target="_blank" rel="noopener noreferrer">[${num}]</a>`;
+            }
+            return match;
         }
-        return match;
-      }
     );
 
     return (
-      <>
-        <MessageText
-          dangerouslySetInnerHTML={{
-            __html: processedText,
-          }}
-        />
-        <Timestamp>
-          {new Date(message.timestamp).toLocaleTimeString()}
-        </Timestamp>
-      </>
+        <>
+            <MessageText dangerouslySetInnerHTML={{ __html: processedText }} />
+            {cleanedReferences && cleanedReferences.length > 0 && (
+                <ReferencesList>
+                    <strong>References:</strong>
+                    {cleanedReferences.map((ref, refIndex) => (
+                        <ReferenceItem key={refIndex}>
+                            <a href={ref} target="_blank" rel="noopener noreferrer">
+                                [{refIndex + 1}] {ref}
+                            </a>
+                        </ReferenceItem>
+                    ))}
+                </ReferencesList>
+            )}
+            <Timestamp>{new Date(message.timestamp).toLocaleTimeString()}</Timestamp>
+        </>
     );
-  };
+};
+
 
   return (
     <MessagesContainer>
       {messages.map((msg, index) => (
-        <MessageBubble 
-          key={index} 
-          sender={msg.sender}
-          isStreaming={msg.isStreaming}
-        >
+        <MessageBubble key={index} sender={msg.sender} isStreaming={msg.isStreaming}>
           {renderMessageContent(msg)}
         </MessageBubble>
       ))}

@@ -94,17 +94,21 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
   };
 
   // Sort history by last_interaction_time
-  const sortedHistory = Array.isArray(chatHistory) 
-    ? [...chatHistory].sort((a, b) => {
-        try {
-          const aTime = new Date(a.last_interaction_time || 0).getTime();
-          const bTime = new Date(b.last_interaction_time || 0).getTime();
-          return bTime - aTime;
-        } catch (error) {
-          return 0;
-        }
-      })
-    : [];
+// Sort history by created_at time in ascending order (chronologically)
+// Sort history by created_at time in ascending order (chronologically)
+const sortedHistory = Array.isArray(chatHistory) 
+  ? [...chatHistory].sort((a, b) => {
+      try {
+        const aTime = new Date(a.created_at || 0).getTime();
+        const bTime = new Date(b.created_at || 0).getTime();
+        return aTime - bTime;  // Ascending order for chronological listing
+      } catch (error) {
+        return 0;
+      }
+    })
+  : [];
+
+
 
   return (
     <SidebarContainer>

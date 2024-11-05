@@ -164,7 +164,6 @@ const Chatbot: React.FC = () => {
       setIsLoading((prev) => ({ ...prev, history: false }));
     }
   };
-
   const loadChatHistory = async (chatId: string) => {
     setIsLoading((prev) => ({ ...prev, messages: true }));
     try {
@@ -178,23 +177,17 @@ const Chatbot: React.FC = () => {
           body: JSON.stringify({ session_id: chatId }),
         }
       );
-
+  
       if (!response.ok) throw new Error("Failed to load chat history");
-
+  
       const data = await response.json();
-      const chatMessages: Message[] = data.flatMap((msg: any) => [
-        {
-          sender: "user",
-          text: msg.user_message,
-          timestamp: msg.timestamp,
-        },
-        {
-          sender: "bot",
-          text: msg.bot_response,
-          references: msg.references,
-          timestamp: msg.timestamp,
-        },
-      ]);
+  
+      // Map data to Message format expected by MessageList
+      const chatMessages: Message[] = data.map((msg: any) => ({
+        sender: msg.role === "assistant" ? "bot" : "user",
+        text: msg.content || "No content available",
+        timestamp: msg.timestamp || new Date().toISOString(),
+      }));
       setMessages(chatMessages);
     } catch (error) {
       console.error("Error loading chat history:", error);
@@ -203,24 +196,27 @@ const Chatbot: React.FC = () => {
       setIsLoading((prev) => ({ ...prev, messages: false }));
     }
   };
+  
 
   const sendMessage = async () => {
     if (!input.trim() || isStreaming) return;
 
+    // Define userMessage with specific types
     const userMessage: Message = {
-      sender: "user",
-      text: input,
-      timestamp: new Date().toISOString(),
+        sender: "user", // Explicitly set as "user" type
+        text: input,
+        timestamp: new Date().toISOString(),
     };
 
     setMessages((prev) => [...prev, userMessage]);
     setInput("");
 
+    // Define botMessage as a placeholder for streaming
     const botMessage: Message = {
-      sender: "bot",
-      text: "",
-      timestamp: new Date().toISOString(),
-      isStreaming: true,
+        sender: "bot", // Explicitly set as "bot" type
+        text: "",
+        timestamp: new Date().toISOString(),
+        isStreaming: true,
     };
 
     setMessages((prev) => [...prev, botMessage]);
@@ -228,90 +224,87 @@ const Chatbot: React.FC = () => {
     setError(null);
 
     try {
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-      }
-
-      const response = await fetch("https://testingcosmo.azurewebsites.net/api/chatbot?code=EdE_vOOJRtEbYF0z480lahH-VWqhDCCv_FyINJ0HEpWgAzFurPIdQg%3D%3D", {
-        method: "POST",
-        headers: {
-          "Content-Type": "application/json",
-        },
-        body: JSON.stringify({
-          user_id: sessionState.user_id,
-          message: input,
-          session_id: sessionState.session_id,
-        }),
-      });
-
-      if (!response.ok) {
-        throw new Error(`HTTP error! status: ${response.status}`);
-      }
-
-      const reader = response.body?.getReader();
-      if (!reader) {
-        throw new Error("Response body is not readable");
-      }
-
-      let accumulatedText = "";
-      let decoder = new TextDecoder();
-
-      while (true) {
-        const { done, value } = await reader.read();
-        if (done) break;
-
-        const chunk = decoder.decode(value, { stream: true });
-        const messages = chunk
-          .split("\n\n")
-          .filter(msg => msg.trim())
-          .map(msg => msg.replace(/^data: /, ""));
-
-        for (const msg of messages) {
-          try {
-            const data = JSON.parse(msg);
-            
-            switch (data.type) {
-              case "info":
-                console.log("Info:", data.content);
-                break;
-
-              case "chunk":
-                accumulatedText += data.content;
-                updateLastBotMessage(accumulatedText, undefined, true);
-                break;
-
-              case "error":
-                throw new Error(data.content);
-                
-              case "done":
-                setIsStreaming(false);
-                updateLastBotMessage(accumulatedText, undefined, false);
-                break;
-            }
-          } catch (e) {
-            console.error("Error parsing SSE message:", e);
-          }
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
         }
-      }
 
-      if (response.headers.get("X-Session-Id")) {
-        const newSessionId = response.headers.get("X-Session-Id");
-        setSessionState(prev => ({
-          ...prev,
-          session_id: newSessionId,
-        }));
-      }
+        const response = await fetch("https://testingcosmo.azurewebsites.net/api/chatbot?code=EdE_vOOJRtEbYF0z480lahH-VWqhDCCv_FyINJ0HEpWgAzFurPIdQg%3D%3D", {
+            method: "POST",
+            headers: {
+                "Content-Type": "application/json",
+            },
+            body: JSON.stringify({
+                user_id: sessionState.user_id,
+                message: input,
+                session_id: sessionState.session_id,
+            }),
+        });
 
+        if (!response.ok) {
+            throw new Error(`HTTP error! status: ${response.status}`);
+        }
+
+        const reader = response.body?.getReader();
+        if (!reader) {
+            throw new Error("Response body is not readable");
+        }
+
+        let accumulatedText = "";
+        const decoder = new TextDecoder();
+
+        while (true) {
+            const { done, value } = await reader.read();
+            if (done) break;
+
+            const chunk = decoder.decode(value, { stream: true });
+            const messages = chunk
+                .split("\n\n")
+                .filter((msg) => msg.trim())
+                .map((msg) => msg.replace(/^data: /, ""));
+
+            for (const msg of messages) {
+                try {
+                    const data = JSON.parse(msg);
+
+                    switch (data.type) {
+                        case "info":
+                            if (data.session_id) {
+                                setSessionState((prev) => ({
+                                    ...prev,
+                                    session_id: data.session_id,
+                                }));
+                            }
+                            break;
+
+                        case "chunk":
+                            accumulatedText += data.content;
+                            updateLastBotMessage(accumulatedText, data.references, true);
+                            break;
+
+                        case "error":
+                            throw new Error(data.content);
+
+                        case "done":
+                            setIsStreaming(false);
+                            updateLastBotMessage(accumulatedText, undefined, false);
+                            break;
+                    }
+                } catch (e) {
+                    console.error("Error parsing SSE message:", e);
+                }
+            }
+        }
     } catch (error) {
-      handleError(error);
+        handleError(error);
     } finally {
-      setIsStreaming(false);
-      if (eventSourceRef.current) {
-        eventSourceRef.current.close();
-        eventSourceRef.current = null;
-      }
+        setIsStreaming(false);
+        if (eventSourceRef.current) {
+            eventSourceRef.current.close();
+            eventSourceRef.current = null;
+        }
     }
-  };
+};
+
 
   const updateLastBotMessage = (
     text: string,
