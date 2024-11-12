@@ -81,14 +81,14 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
             : content;
     }
 
-    return "New Chat";  // Fallback title if no valid message is found
+    return "New Chat"; 
 };
 
 
   const formatTime = (dateString: string): string => {
     try {
       const date = parseISO(dateString);
-      return format(date, "PPPpp"); // Full date and time format
+      return format(date, "PPPpp"); 
     } catch (error) {
       console.error('Error formatting date:', error);
       return 'Invalid date';
@@ -100,7 +100,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
         try {
           const aDate = parseISO(String(a.created_at));
           const bDate = parseISO(String(b.created_at));
-          return compareDesc(aDate, bDate); // Newest first
+          return compareDesc(aDate, bDate); 
         } catch (error) {
           return 0;
         }
@@ -114,7 +114,7 @@ const HistorySidebar: React.FC<HistorySidebarProps> = ({
       {!Array.isArray(chatHistory) || sortedHistory.length === 0 ? (
   <p style={{ color: '#8b9cab' }}>No chat history available</p>
 ) : (
-  [...sortedHistory].reverse().map((chat) => (
+  [...sortedHistory].map((chat) => (
     <ChatItem 
       key={chat.session_id}
       isSelected={chat.session_id === selectedChatId}
